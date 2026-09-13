@@ -54,5 +54,13 @@
     "note": "",
     "imagePath": "images/1789309667595-m4nmwc.jpg",
     "createdAt": 1789309669360
+  },
+  {
+    "id": "1789314590004-esjfb1",
+    "title": "domaci1",
+    "subject": "c#",
+    "note": "Popunjavanje dijagonala. Indexi gornjih i donjih krajeva su isti.Red je uvek jednak koloni. Posto je niz 8x8 i+j mora da bude 7, tj n-1. If ispituje da lki element na glavnoj ili sporednoj dijagonali i ako jeste postavi ga da bude 0.",
+    "imagePath": "images/1789314590004-esjfb1.jpg",
+    "createdAt": 1789314591819
   }
 ]
