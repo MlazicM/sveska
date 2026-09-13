@@ -95,36 +95,193 @@ function applyFilter() {
   }));
 }
 
+let lbState = { scale: 1, x: 0, y: 0, natW: 0, natH: 0, baseW: 0, baseH: 0 };
+const MIN_SCALE = 1;
+const MAX_SCALE = 8;
+
 function closeModal() {
   document.getElementById("modalRoot").innerHTML = "";
-  document.removeEventListener("keydown", onEscape);
+  document.removeEventListener("keydown", onModalKey);
+  document.body.style.overflow = "";
 }
 
-function onEscape(ev) {
-  if (ev.key === "Escape") closeModal();
+function onModalKey(ev) {
+  if (ev.key === "Escape") { closeModal(); return; }
+  if (ev.key === "+" || ev.key === "=") { ev.preventDefault(); zoomBy(1.3); }
+  if (ev.key === "-" || ev.key === "_") { ev.preventDefault(); zoomBy(1 / 1.3); }
+  if (ev.key === "0") { ev.preventDefault(); resetZoom(); }
+}
+
+function applyTransform() {
+  const img = document.getElementById("lbImg");
+  if (!img) return;
+  img.style.transform = "translate(" + lbState.x + "px, " + lbState.y + "px) scale(" + lbState.scale + ")";
+  const out = document.getElementById("lbZoom");
+  if (out) out.textContent = Math.round(lbState.scale * 100) + "%";
+}
+
+function clampPan() {
+  const stage = document.getElementById("lbStage");
+  if (!stage) return;
+  const sw = stage.clientWidth;
+  const sh = stage.clientHeight;
+  const w = lbState.baseW * lbState.scale;
+  const h = lbState.baseH * lbState.scale;
+
+  if (w <= sw) lbState.x = (sw - w) / 2;
+  else lbState.x = Math.min(0, Math.max(sw - w, lbState.x));
+
+  if (h <= sh) lbState.y = (sh - h) / 2;
+  else lbState.y = Math.min(0, Math.max(sh - h, lbState.y));
+}
+
+function zoomAt(factor, cx, cy) {
+  const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, lbState.scale * factor));
+  if (next === lbState.scale) return;
+  const ratio = next / lbState.scale;
+  lbState.x = cx - (cx - lbState.x) * ratio;
+  lbState.y = cy - (cy - lbState.y) * ratio;
+  lbState.scale = next;
+  clampPan();
+  applyTransform();
+}
+
+function zoomBy(factor) {
+  const stage = document.getElementById("lbStage");
+  if (!stage) return;
+  zoomAt(factor, stage.clientWidth / 2, stage.clientHeight / 2);
+}
+
+function resetZoom() {
+  lbState.scale = 1;
+  clampPan();
+  applyTransform();
+}
+
+function fitImage() {
+  const stage = document.getElementById("lbStage");
+  const img = document.getElementById("lbImg");
+  if (!stage || !img) return;
+  const sw = stage.clientWidth;
+  const sh = stage.clientHeight;
+  const ratio = Math.min(sw / lbState.natW, sh / lbState.natH, 1);
+  lbState.baseW = lbState.natW * ratio;
+  lbState.baseH = lbState.natH * ratio;
+  img.style.width = lbState.baseW + "px";
+  img.style.height = lbState.baseH + "px";
+  img.style.maxWidth = "none";
+  img.style.maxHeight = "none";
+  resetZoom();
 }
 
 function openModal(e) {
   const root = document.getElementById("modalRoot");
-  root.innerHTML = '<div class="overlay" id="ov" role="dialog" aria-modal="true" aria-label="' + esc(e.title) + '">' +
-    '<div class="modal">' +
-      '<img src="' + esc(e.imagePath) + '" alt="Zadatak: ' + esc(e.title) + '">' +
-      '<div class="body">' +
-        '<div class="row">' +
-          '<h2>' + esc(e.title) + '</h2>' +
-          '<button class="close" id="closeBtn" aria-label="Zatvori">&times;</button>' +
-        '</div>' +
-        '<div class="stamp"><span class="tag">' + esc(e.subject) + '</span>' + fmtDate(e.createdAt) + '</div>' +
-        (e.note ? '<div class="note">' + esc(e.note) + '</div>' : '') +
+  document.body.style.overflow = "hidden";
+
+  root.innerHTML = '<div class="lightbox" id="lb" role="dialog" aria-modal="true" aria-label="' + esc(e.title) + '">' +
+    '<div class="lb-bar">' +
+      '<div style="min-width:0">' +
+        '<div class="lb-title">' + esc(e.title) + '</div>' +
+        '<div class="lb-meta"><span class="tag">' + esc(e.subject) + '</span>' + fmtDate(e.createdAt) + '</div>' +
+      '</div>' +
+      '<div class="lb-tools">' +
+        '<button class="lb-btn" id="lbOut" aria-label="Umanji">&minus;</button>' +
+        '<span class="lb-zoom" id="lbZoom">100%</span>' +
+        '<button class="lb-btn" id="lbIn" aria-label="Uvećaj">+</button>' +
+        '<button class="lb-btn" id="lbFit">Uklopi</button>' +
+        '<a class="lb-btn" href="' + esc(e.imagePath) + '" target="_blank" rel="noopener">Original</a>' +
+        '<button class="lb-btn" id="lbClose" aria-label="Zatvori">&times;</button>' +
       '</div>' +
     '</div>' +
+    '<div class="lb-stage" id="lbStage"><img id="lbImg" src="' + esc(e.imagePath) + '" alt="Zadatak: ' + esc(e.title) + '"></div>' +
+    (e.note ? '<div class="lb-note">' + esc(e.note) + '</div>' : '') +
+    '<div class="lb-hint">Točkić miša ili dupli klik za zumiranje, prevlačenje za pomeranje. Tasteri + i - i 0, Escape zatvara.</div>' +
   '</div>';
 
-  const ov = document.getElementById("ov");
-  ov.addEventListener("click", function (ev) { if (ev.target === ov) closeModal(); });
-  document.getElementById("closeBtn").addEventListener("click", closeModal);
-  document.getElementById("closeBtn").focus();
-  document.addEventListener("keydown", onEscape);
+  const stage = document.getElementById("lbStage");
+  const img = document.getElementById("lbImg");
+
+  function ready() {
+    lbState.natW = img.naturalWidth || stage.clientWidth;
+    lbState.natH = img.naturalHeight || stage.clientHeight;
+    fitImage();
+  }
+  if (img.complete && img.naturalWidth) ready();
+  else img.addEventListener("load", ready);
+
+  document.getElementById("lbClose").addEventListener("click", closeModal);
+  document.getElementById("lbIn").addEventListener("click", function () { zoomBy(1.35); });
+  document.getElementById("lbOut").addEventListener("click", function () { zoomBy(1 / 1.35); });
+  document.getElementById("lbFit").addEventListener("click", resetZoom);
+
+  stage.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    const r = stage.getBoundingClientRect();
+    zoomAt(ev.deltaY < 0 ? 1.18 : 1 / 1.18, ev.clientX - r.left, ev.clientY - r.top);
+  }, { passive: false });
+
+  stage.addEventListener("dblclick", function (ev) {
+    const r = stage.getBoundingClientRect();
+    if (lbState.scale > 1.05) resetZoom();
+    else zoomAt(2.6, ev.clientX - r.left, ev.clientY - r.top);
+  });
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  const pointers = new Map();
+  let pinchDist = 0;
+
+  stage.addEventListener("pointerdown", function (ev) {
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pointers.size === 2) {
+      const p = Array.from(pointers.values());
+      pinchDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      dragging = false;
+      return;
+    }
+    dragging = true;
+    startX = ev.clientX - lbState.x;
+    startY = ev.clientY - lbState.y;
+    stage.classList.add("dragging");
+    stage.setPointerCapture(ev.pointerId);
+  });
+
+  stage.addEventListener("pointermove", function (ev) {
+    if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    if (pointers.size === 2) {
+      const p = Array.from(pointers.values());
+      const dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      if (pinchDist > 0) {
+        const r = stage.getBoundingClientRect();
+        zoomAt(dist / pinchDist, (p[0].x + p[1].x) / 2 - r.left, (p[0].y + p[1].y) / 2 - r.top);
+      }
+      pinchDist = dist;
+      return;
+    }
+
+    if (!dragging) return;
+    lbState.x = ev.clientX - startX;
+    lbState.y = ev.clientY - startY;
+    clampPan();
+    applyTransform();
+  });
+
+  function endPointer(ev) {
+    pointers.delete(ev.pointerId);
+    if (pointers.size < 2) pinchDist = 0;
+    if (pointers.size === 0) {
+      dragging = false;
+      stage.classList.remove("dragging");
+    }
+  }
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+
+  window.addEventListener("resize", fitImage);
+  document.getElementById("lbClose").focus();
+  document.addEventListener("keydown", onModalKey);
 }
 
 async function load() {
