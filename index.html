@@ -3,9 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+<meta name="description" content="Zadaci sa časa programiranja.">
 <title>Sveska</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -16,75 +14,139 @@
       <h1>Sveska</h1>
       <p class="sub">Zadaci sa časa programiranja.</p>
     </div>
-    <a class="quiet" href="upload.html">Uredi zadatke →</a>
+    <a class="navlink" href="upload.html">Uredi zadatke</a>
   </header>
 
-  <div id="status" class="empty">Učitavanje...</div>
-  <div id="grid" class="grid" style="display:none"></div>
+  <div class="toolbar" id="toolbar" hidden>
+    <span class="count" id="count"></span>
+    <input type="search" class="search" id="search" placeholder="Pretraži po naslovu ili predmetu" aria-label="Pretraži zadatke">
+  </div>
+
+  <div id="status" class="empty">Učitavanje.</div>
+  <div id="grid" class="grid" hidden></div>
 </div>
 
 <div id="modalRoot"></div>
 
 <script>
-async function load() {
-  const statusEl = document.getElementById('status');
-  const grid = document.getElementById('grid');
-  try {
-    const res = await fetch('entries.json?_=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('no entries.json');
-    const entries = await res.json();
-    entries.sort((a, b) => b.createdAt - a.createdAt);
-    if (entries.length === 0) {
-      statusEl.textContent = 'Nema još nijednog zadatka.';
-      return;
-    }
-    statusEl.style.display = 'none';
-    grid.style.display = 'grid';
-    grid.innerHTML = entries.map((e, i) => cardHtml(e, i)).join('');
-    grid.querySelectorAll('.card').forEach((el, i) => {
-      el.addEventListener('click', () => openModal(entries[i]));
-    });
-  } catch (err) {
-    statusEl.textContent = 'Ne mogu da učitam svesku trenutno.';
-  }
-}
+let allEntries = [];
 
 function esc(s) {
-  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
 }
 
 function fmtDate(ts) {
-  return new Date(ts).toLocaleDateString('sr-RS', { day: '2-digit', month: 'short', year: 'numeric' });
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("sr-RS", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function cardHtml(e) {
-  return `<div class="card">
-    <img src="${esc(e.imagePath)}" alt="${esc(e.title)}" loading="lazy">
-    <div class="meta">
-      <div class="t">${esc(e.title)}</div>
-      <div class="s">${esc(e.subject)} · ${fmtDate(e.createdAt)}</div>
-    </div>
-  </div>`;
+function cardHtml(e, i) {
+  return '<div class="card" tabindex="0" role="button" data-i="' + i + '" aria-label="Otvori zadatak ' + esc(e.title) + '">' +
+    '<img src="' + esc(e.imagePath) + '" alt="Zadatak: ' + esc(e.title) + '" loading="lazy">' +
+    '<div class="meta">' +
+      '<div class="t">' + esc(e.title) + '</div>' +
+      '<div class="s"><span class="tag">' + esc(e.subject) + '</span>' + fmtDate(e.createdAt) + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function render(entries) {
+  const grid = document.getElementById("grid");
+  const statusEl = document.getElementById("status");
+  const countEl = document.getElementById("count");
+
+  countEl.textContent = entries.length === 1 ? "1 zadatak" : entries.length + " zadataka";
+
+  if (entries.length === 0) {
+    grid.hidden = true;
+    statusEl.hidden = false;
+    statusEl.textContent = allEntries.length === 0
+      ? "Nema još nijednog zadatka."
+      : "Nijedan zadatak ne odgovara pretrazi.";
+    return;
+  }
+
+  statusEl.hidden = true;
+  grid.hidden = false;
+  grid.innerHTML = entries.map(cardHtml).join("");
+
+  grid.querySelectorAll(".card").forEach(function (el) {
+    const entry = entries[Number(el.dataset.i)];
+    el.addEventListener("click", function () { openModal(entry); });
+    el.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        openModal(entry);
+      }
+    });
+  });
+}
+
+function applyFilter() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  if (!q) return render(allEntries);
+  render(allEntries.filter(function (e) {
+    return (e.title || "").toLowerCase().includes(q) ||
+           (e.subject || "").toLowerCase().includes(q) ||
+           (e.note || "").toLowerCase().includes(q);
+  }));
+}
+
+function closeModal() {
+  document.getElementById("modalRoot").innerHTML = "";
+  document.removeEventListener("keydown", onEscape);
+}
+
+function onEscape(ev) {
+  if (ev.key === "Escape") closeModal();
 }
 
 function openModal(e) {
-  const root = document.getElementById('modalRoot');
-  root.innerHTML = `<div class="overlay" id="ov">
-    <div class="modal">
-      <img src="${esc(e.imagePath)}" alt="${esc(e.title)}">
-      <div class="body">
-        <div class="row">
-          <h2>${esc(e.title)}</h2>
-          <button class="close" id="closeBtn">&times;</button>
-        </div>
-        <div class="s" style="color:#78716c;font-size:12px;margin-top:4px">${esc(e.subject)} · ${fmtDate(e.createdAt)}</div>
-        ${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}
-      </div>
-    </div>
-  </div>`;
-  const ov = document.getElementById('ov');
-  ov.addEventListener('click', (ev) => { if (ev.target === ov) root.innerHTML = ''; });
-  document.getElementById('closeBtn').addEventListener('click', () => root.innerHTML = '');
+  const root = document.getElementById("modalRoot");
+  root.innerHTML = '<div class="overlay" id="ov" role="dialog" aria-modal="true" aria-label="' + esc(e.title) + '">' +
+    '<div class="modal">' +
+      '<img src="' + esc(e.imagePath) + '" alt="Zadatak: ' + esc(e.title) + '">' +
+      '<div class="body">' +
+        '<div class="row">' +
+          '<h2>' + esc(e.title) + '</h2>' +
+          '<button class="close" id="closeBtn" aria-label="Zatvori">&times;</button>' +
+        '</div>' +
+        '<div class="stamp"><span class="tag">' + esc(e.subject) + '</span>' + fmtDate(e.createdAt) + '</div>' +
+        (e.note ? '<div class="note">' + esc(e.note) + '</div>' : '') +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
+  const ov = document.getElementById("ov");
+  ov.addEventListener("click", function (ev) { if (ev.target === ov) closeModal(); });
+  document.getElementById("closeBtn").addEventListener("click", closeModal);
+  document.getElementById("closeBtn").focus();
+  document.addEventListener("keydown", onEscape);
+}
+
+async function load() {
+  const statusEl = document.getElementById("status");
+  try {
+    const res = await fetch("entries.json?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("neispravan format");
+
+    allEntries = data
+      .filter(function (e) { return e && e.imagePath && e.title; })
+      .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+
+    document.getElementById("toolbar").hidden = allEntries.length === 0;
+    document.getElementById("search").addEventListener("input", applyFilter);
+    render(allEntries);
+  } catch (err) {
+    statusEl.hidden = false;
+    statusEl.textContent = "Ne mogu da učitam svesku. Osveži stranicu za koji trenutak.";
+  }
 }
 
 load();
