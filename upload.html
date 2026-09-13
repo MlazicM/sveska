@@ -79,13 +79,13 @@ function b64ToUtf8(b64) {
 }
 
 async function verifyToken() {
-  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
+  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders(), cache: "no-store" });
   if (!res.ok) throw new Error("bad token or repo");
   return true;
 }
 
 async function getEntriesFile() {
-  const res = await fetch(`${API}/contents/entries.json?ref=${BRANCH}`, { headers: ghHeaders() });
+  const res = await fetch(`${API}/contents/entries.json?ref=${BRANCH}`, { headers: ghHeaders(), cache: "no-store" });
   if (res.status === 404) return { entries: [], sha: null };
   if (!res.ok) throw new Error("fetch entries.json failed: " + res.status);
   const data = await res.json();
@@ -217,7 +217,7 @@ async function removeEntry(id) {
     }, `Ukloni zadatak: ${id}`);
     if (deletedTarget && deletedTarget.imagePath) {
       try {
-        const imgRes = await fetch(`${API}/contents/${deletedTarget.imagePath}?ref=${BRANCH}`, { headers: ghHeaders() });
+        const imgRes = await fetch(`${API}/contents/${deletedTarget.imagePath}?ref=${BRANCH}`, { headers: ghHeaders(), cache: "no-store" });
         if (imgRes.ok) {
           const imgData = await imgRes.json();
           await deleteFile(deletedTarget.imagePath, imgData.sha, `Ukloni sliku za: ${deletedTarget.title}`);
