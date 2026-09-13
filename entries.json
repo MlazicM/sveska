@@ -62,5 +62,13 @@
     "note": "Popunjavanje dijagonala. Indexi gornjih i donjih krajeva su isti.Red je uvek jednak koloni. Posto je niz 8x8 i+j mora da bude 7, tj n-1. If ispituje da lki element na glavnoj ili sporednoj dijagonali i ako jeste postavi ga da bude 0.",
     "imagePath": "images/1789314590004-esjfb1.jpg",
     "createdAt": 1789314591819
+  },
+  {
+    "id": "1789314734358-zb41n6",
+    "title": "domaci2",
+    "subject": "c#",
+    "note": "Konj krece iz a1 i odatle ima dve mogucnosti za kretnju. Kako napravi potez, mogucnost mu se poveca dva puta do 8 maksimalnih mogucih sledecih poteza. Kod nisam znao sam da napisem, ali sam razumeo zadatak.",
+    "imagePath": "images/1789314734358-zb41n6.jpg",
+    "createdAt": 1789314736177
   }
 ]
