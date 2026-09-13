@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sveska</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="page-head">
+    <div>
+      <h1>Sveska</h1>
+      <p class="sub">Zadaci sa časa programiranja.</p>
+    </div>
+  </header>
+
+  <div id="status" class="empty">Učitavanje...</div>
+  <div id="grid" class="grid" style="display:none"></div>
+</div>
+
+<div id="modalRoot"></div>
+
+<script>
+async function load() {
+  const statusEl = document.getElementById('status');
+  const grid = document.getElementById('grid');
+  try {
+    const res = await fetch('entries.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('no entries.json');
+    const entries = await res.json();
+    entries.sort((a, b) => b.createdAt - a.createdAt);
+    if (entries.length === 0) {
+      statusEl.textContent = 'Nema još nijednog zadatka.';
+      return;
+    }
+    statusEl.style.display = 'none';
+    grid.style.display = 'grid';
+    grid.innerHTML = entries.map((e, i) => cardHtml(e, i)).join('');
+    grid.querySelectorAll('.card').forEach((el, i) => {
+      el.addEventListener('click', () => openModal(entries[i]));
+    });
+  } catch (err) {
+    statusEl.textContent = 'Ne mogu da učitam svesku trenutno.';
+  }
+}
+
+function esc(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString('sr-RS', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function cardHtml(e) {
+  return `<div class="card">
+    <img src="${esc(e.imagePath)}" alt="${esc(e.title)}" loading="lazy">
+    <div class="meta">
+      <div class="t">${esc(e.title)}</div>
+      <div class="s">${esc(e.subject)} · ${fmtDate(e.createdAt)}</div>
+    </div>
+  </div>`;
+}
+
+function openModal(e) {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="overlay" id="ov">
+    <div class="modal">
+      <img src="${esc(e.imagePath)}" alt="${esc(e.title)}">
+      <div class="body">
+        <div class="row">
+          <h2>${esc(e.title)}</h2>
+          <button class="close" id="closeBtn">&times;</button>
+        </div>
+        <div class="s" style="color:#78716c;font-size:12px;margin-top:4px">${esc(e.subject)} · ${fmtDate(e.createdAt)}</div>
+        ${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}
+      </div>
+    </div>
+  </div>`;
+  const ov = document.getElementById('ov');
+  ov.addEventListener('click', (ev) => { if (ev.target === ov) root.innerHTML = ''; });
+  document.getElementById('closeBtn').addEventListener('click', () => root.innerHTML = '');
+}
+
+load();
+</script>
+</body>
+</html>

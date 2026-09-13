@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sveska — dodaj zadatak</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="page-head">
+    <div>
+      <h1>Sveska — uređivanje</h1>
+      <p class="sub">Ova stranica nije linkovana sa javne strane. Ne deli je.</p>
+    </div>
+    <a class="quiet" href="index.html">← Nazad na svesku</a>
+  </header>
+
+  <div id="gate" class="gate">
+    <p>Unesi svoj GitHub token da bi mogao da dodaješ i brišeš zadatke. Token se čuva samo u ovom browseru, nikad se ne šalje nigde osim ka GitHub-u.</p>
+    <input type="password" id="tokenInput" placeholder="GitHub Personal Access Token">
+    <div id="gateErr" class="err" style="display:none"></div>
+    <button class="primary" id="saveTokenBtn" style="margin-top:10px">Sačuvaj token</button>
+  </div>
+
+  <div id="app" style="display:none">
+    <form class="entry-form" id="entryForm">
+      <div class="field-row">
+        <input type="text" id="naslov" placeholder="Naslov zadatka">
+        <input type="text" id="predmet" placeholder="Predmet (npr. C, Python)">
+      </div>
+      <textarea id="napomena" placeholder="Napomena (opciono)"></textarea>
+      <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
+        <label class="file-label">
+          📎 Izaberi sliku
+          <input type="file" id="fileInput" accept="image/*" style="display:none">
+        </label>
+        <div id="previewWrap"></div>
+      </div>
+      <div id="formErr" class="err" style="display:none"></div>
+      <button type="submit" class="primary" id="submitBtn">Sačuvaj zadatak</button>
+      <div class="hint" id="statusMsg"></div>
+    </form>
+
+    <div id="listStatus" class="empty">Učitavanje...</div>
+    <div id="grid" class="grid" style="display:none"></div>
+    <div style="margin-top:16px">
+      <button class="ghost" id="logoutBtn">Zaboravi token na ovom uređaju</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const OWNER = "MlazicM";
+const REPO = "sveska";
+const BRANCH = "main";
+const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+const TOKEN_KEY = "sveska_gh_token";
+
+let token = localStorage.getItem(TOKEN_KEY) || "";
+let imgDataUrl = null;
+let imgExt = "jpg";
+
+function ghHeaders() {
+  return {
+    "Authorization": `token ${token}`,
+    "Accept": "application/vnd.github+json"
+  };
+}
+
+function utf8ToB64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64ToUtf8(b64) {
+  return decodeURIComponent(escape(atob(b64.replace(/\n/g, ""))));
+}
+
+async function verifyToken() {
+  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
+  if (!res.ok) throw new Error("bad token or repo");
+  return true;
+}
+
+async function getEntriesFile() {
+  const res = await fetch(`${API}/contents/entries.json?ref=${BRANCH}`, { headers: ghHeaders() });
+  if (res.status === 404) return { entries: [], sha: null };
+  if (!res.ok) throw new Error("fetch entries.json failed: " + res.status);
+  const data = await res.json();
+  const entries = JSON.parse(b64ToUtf8(data.content) || "[]");
+  return { entries, sha: data.sha };
+}
+
+async function putFile(path, contentB64, message, sha) {
+  const body = { message, content: contentB64, branch: BRANCH };
+  if (sha) body.sha = sha;
+  const res = await fetch(`${API}/contents/${path}`, {
+    method: "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`PUT ${path} failed: ${res.status} ${t}`);
+  }
+  return res.json();
+}
+
+async function deleteFile(path, sha, message) {
+  const res = await fetch(`${API}/contents/${path}`, {
+    method: "DELETE",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ message, sha, branch: BRANCH })
+  });
+  if (!res.ok) throw new Error("delete failed: " + res.status);
+}
+
+function compressImage(file, maxDim = 1400, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function esc(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString('sr-RS', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+async function refreshList() {
+  const listStatus = document.getElementById("listStatus");
+  const grid = document.getElementById("grid");
+  listStatus.style.display = "block";
+  listStatus.textContent = "Učitavanje...";
+  grid.style.display = "none";
+  try {
+    const { entries } = await getEntriesFile();
+    entries.sort((a, b) => b.createdAt - a.createdAt);
+    if (entries.length === 0) {
+      listStatus.textContent = "Nema još nijednog zadatka.";
+      return;
+    }
+    listStatus.style.display = "none";
+    grid.style.display = "grid";
+    grid.innerHTML = entries.map(e => `
+      <div class="card" data-id="${e.id}">
+        <img src="${esc(e.imagePath)}" alt="${esc(e.title)}">
+        <button class="del-btn" data-id="${e.id}">Obriši</button>
+        <div class="meta">
+          <div class="t">${esc(e.title)}</div>
+          <div class="s">${esc(e.subject)} · ${fmtDate(e.createdAt)}</div>
+        </div>
+      </div>`).join("");
+    grid.querySelectorAll(".del-btn").forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if (!confirm("Obrisati ovaj zadatak?")) return;
+        await removeEntry(btn.dataset.id);
+      });
+    });
+  } catch (err) {
+    listStatus.textContent = "Ne mogu da učitam listu: " + err.message;
+  }
+}
+
+async function removeEntry(id) {
+  try {
+    const { entries, sha } = await getEntriesFile();
+    const target = entries.find(e => e.id === id);
+    const remaining = entries.filter(e => e.id !== id);
+    const newContent = utf8ToB64(JSON.stringify(remaining, null, 2));
+    await putFile("entries.json", newContent, `Ukloni zadatak: ${target ? target.title : id}`, sha);
+    if (target && target.imagePath) {
+      try {
+        const imgRes = await fetch(`${API}/contents/${target.imagePath}?ref=${BRANCH}`, { headers: ghHeaders() });
+        if (imgRes.ok) {
+          const imgData = await imgRes.json();
+          await deleteFile(target.imagePath, imgData.sha, `Ukloni sliku za: ${target.title}`);
+        }
+      } catch {}
+    }
+    refreshList();
+  } catch (err) {
+    alert("Brisanje nije uspelo: " + err.message);
+  }
+}
+
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    imgDataUrl = await compressImage(file);
+    const wrap = document.getElementById("previewWrap");
+    wrap.innerHTML = `<div class="preview-thumb"><img src="${imgDataUrl}"><button type="button" id="clearImgBtn">&times;</button></div>`;
+    document.getElementById("clearImgBtn").addEventListener("click", () => {
+      imgDataUrl = null;
+      wrap.innerHTML = "";
+      document.getElementById("fileInput").value = "";
+    });
+  } catch {
+    showFormErr("Slika nije mogla da se učita.");
+  }
+});
+
+function showFormErr(msg) {
+  const el = document.getElementById("formErr");
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+document.getElementById("entryForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  showFormErr("");
+  const naslov = document.getElementById("naslov").value.trim();
+  const predmet = document.getElementById("predmet").value.trim() || "Opšte";
+  const napomena = document.getElementById("napomena").value.trim();
+  const statusMsg = document.getElementById("statusMsg");
+  const submitBtn = document.getElementById("submitBtn");
+
+  if (!naslov) { showFormErr("Unesi naslov zadatka."); return; }
+  if (!imgDataUrl) { showFormErr("Dodaj sliku zadatka."); return; }
+
+  submitBtn.disabled = true;
+  statusMsg.textContent = "Snimanje...";
+  try {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const imagePath = `images/${id}.jpg`;
+    const base64Content = imgDataUrl.split(",")[1];
+
+    await putFile(imagePath, base64Content, `Dodaj sliku: ${naslov}`);
+
+    const { entries, sha } = await getEntriesFile();
+    entries.push({
+      id, title: naslov, subject: predmet, note: napomena,
+      imagePath, createdAt: Date.now()
+    });
+    const newContent = utf8ToB64(JSON.stringify(entries, null, 2));
+    await putFile("entries.json", newContent, `Dodaj zadatak: ${naslov}`, sha);
+
+    document.getElementById("naslov").value = "";
+    document.getElementById("predmet").value = "";
+    document.getElementById("napomena").value = "";
+    document.getElementById("previewWrap").innerHTML = "";
+    document.getElementById("fileInput").value = "";
+    imgDataUrl = null;
+    statusMsg.textContent = "Sačuvano.";
+    refreshList();
+  } catch (err) {
+    showFormErr("Snimanje nije uspelo: " + err.message);
+    statusMsg.textContent = "";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+document.getElementById("saveTokenBtn").addEventListener("click", async () => {
+  const val = document.getElementById("tokenInput").value.trim();
+  const errEl = document.getElementById("gateErr");
+  errEl.style.display = "none";
+  if (!val) { errEl.textContent = "Unesi token."; errEl.style.display = "block"; return; }
+  token = val;
+  try {
+    await verifyToken();
+    localStorage.setItem(TOKEN_KEY, token);
+    document.getElementById("gate").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    refreshList();
+  } catch (err) {
+    token = "";
+    errEl.textContent = "Token ne radi ili nema pristup repozitorijumu 'sveska'. Proveri token i pokušaj ponovo.";
+    errEl.style.display = "block";
+  }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem(TOKEN_KEY);
+  location.reload();
+});
+
+(async function init() {
+  if (token) {
+    try {
+      await verifyToken();
+      document.getElementById("gate").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      refreshList();
+    } catch {
+      localStorage.removeItem(TOKEN_KEY);
+      token = "";
+    }
+  }
+})();
+</script>
+</body>
+</html>
