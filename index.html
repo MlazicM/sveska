@@ -102,6 +102,7 @@ const MAX_SCALE = 8;
 function closeModal() {
   document.getElementById("modalRoot").innerHTML = "";
   document.removeEventListener("keydown", onModalKey);
+  window.removeEventListener("resize", fitImage);
   document.body.style.overflow = "";
 }
 
@@ -204,7 +205,8 @@ function openModal(e) {
   function ready() {
     lbState.natW = img.naturalWidth || stage.clientWidth;
     lbState.natH = img.naturalHeight || stage.clientHeight;
-    fitImage();
+    // Wait one frame so the stage has its final height before measuring.
+    requestAnimationFrame(fitImage);
   }
   if (img.complete && img.naturalWidth) ready();
   else img.addEventListener("load", ready);

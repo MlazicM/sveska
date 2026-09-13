@@ -500,16 +500,14 @@ button.ghost:hover { border-color: #d6d1cb; color: var(--ink); }
   position: relative;
   cursor: grab;
   touch-action: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 0;
 }
 .lb-stage.dragging { cursor: grabbing; }
 
 .lb-stage img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  position: absolute;
+  top: 0;
+  left: 0;
   transform-origin: 0 0;
   user-select: none;
   -webkit-user-drag: none;
