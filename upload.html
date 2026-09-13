@@ -103,9 +103,31 @@ async function putFile(path, contentB64, message, sha) {
   });
   if (!res.ok) {
     const t = await res.text();
-    throw new Error(`PUT ${path} failed: ${res.status} ${t}`);
+    const err = new Error(`PUT ${path} failed: ${res.status} ${t}`);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
+}
+
+// Applies `mutate(entries) -> newEntries` to entries.json, retrying with a
+// fresh sha if GitHub reports a 409 (the file changed since we last read it).
+async function updateEntriesJson(mutate, message) {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { entries, sha } = await getEntriesFile();
+    const newEntries = mutate(entries);
+    const newContent = utf8ToB64(JSON.stringify(newEntries, null, 2));
+    try {
+      await putFile("entries.json", newContent, message, sha);
+      return newEntries;
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 409) continue; // stale sha — refetch and retry
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 async function deleteFile(path, sha, message) {
@@ -188,17 +210,17 @@ async function refreshList() {
 
 async function removeEntry(id) {
   try {
-    const { entries, sha } = await getEntriesFile();
-    const target = entries.find(e => e.id === id);
-    const remaining = entries.filter(e => e.id !== id);
-    const newContent = utf8ToB64(JSON.stringify(remaining, null, 2));
-    await putFile("entries.json", newContent, `Ukloni zadatak: ${target ? target.title : id}`, sha);
-    if (target && target.imagePath) {
+    let deletedTarget = null;
+    await updateEntriesJson((entries) => {
+      deletedTarget = entries.find(e => e.id === id);
+      return entries.filter(e => e.id !== id);
+    }, `Ukloni zadatak: ${id}`);
+    if (deletedTarget && deletedTarget.imagePath) {
       try {
-        const imgRes = await fetch(`${API}/contents/${target.imagePath}?ref=${BRANCH}`, { headers: ghHeaders() });
+        const imgRes = await fetch(`${API}/contents/${deletedTarget.imagePath}?ref=${BRANCH}`, { headers: ghHeaders() });
         if (imgRes.ok) {
           const imgData = await imgRes.json();
-          await deleteFile(target.imagePath, imgData.sha, `Ukloni sliku za: ${target.title}`);
+          await deleteFile(deletedTarget.imagePath, imgData.sha, `Ukloni sliku za: ${deletedTarget.title}`);
         }
       } catch {}
     }
@@ -252,13 +274,13 @@ document.getElementById("entryForm").addEventListener("submit", async (e) => {
 
     await putFile(imagePath, base64Content, `Dodaj sliku: ${naslov}`);
 
-    const { entries, sha } = await getEntriesFile();
-    entries.push({
-      id, title: naslov, subject: predmet, note: napomena,
-      imagePath, createdAt: Date.now()
-    });
-    const newContent = utf8ToB64(JSON.stringify(entries, null, 2));
-    await putFile("entries.json", newContent, `Dodaj zadatak: ${naslov}`, sha);
+    await updateEntriesJson((entries) => {
+      entries.push({
+        id, title: naslov, subject: predmet, note: napomena,
+        imagePath, createdAt: Date.now()
+      });
+      return entries;
+    }, `Dodaj zadatak: ${naslov}`);
 
     document.getElementById("naslov").value = "";
     document.getElementById("predmet").value = "";
