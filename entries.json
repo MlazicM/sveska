@@ -70,5 +70,13 @@
     "note": "Konj krece iz a1 i odatle ima dve mogucnosti za kretnju. Kako napravi potez, mogucnost mu se poveca dva puta do 8 maksimalnih mogucih sledecih poteza. Kod nisam znao sam da napisem, ali sam razumeo zadatak.",
     "imagePath": "images/1789314734358-zb41n6.jpg",
     "createdAt": 1789314736177
+  },
+  {
+    "id": "1789571740644-041spa",
+    "title": "zadatak8",
+    "subject": "c#",
+    "note": "",
+    "imagePath": "images/1789571740644-041spa.jpg",
+    "createdAt": 1789571742141
   }
 ]
